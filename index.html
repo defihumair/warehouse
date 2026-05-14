@@ -388,7 +388,7 @@ let state = {
 // ── Load data ──────────────────────────────────────────────
 async function loadData() {
   try {
-    const res = await fetch(CONFIG.DATA_URL);
+    const res = await fetch(CONFIG.DATA_URL + '?v=' + Date.now());
     if (!res.ok) throw new Error('HTTP ' + res.status);
     SHED_DATA = await res.json();
     renderSheds();
@@ -461,7 +461,18 @@ function renderLights(filter) {
   const groups = {};
   filtered.forEach(id => {
     const parts = id.split('-');
-    const key = parts[0].match(/^[A-Za-z]+$/) ? `Aisle ${parts[0]}` : `Row ${parseInt(parts[0], 10)}`;
+    // ID format: PREFIX-ROW-RACK-POS e.g. S1-12-H-01, S6-N-14-01, S3-AA-AB-01
+    // parts[0]=shed prefix, parts[1]=row identifier
+    const shed = parts[0];          // e.g. S1, S6, UC
+    const rowPart = parts[1];       // e.g. 12, N, AA, DK, 01
+    let key;
+    if (rowPart === 'DK') {
+      key = 'Dock Lights';
+    } else if (!isNaN(parseInt(rowPart, 10)) && /^\d+$/.test(rowPart)) {
+      key = `Row ${parseInt(rowPart, 10)}`;   // numeric row: 12 → Row 12
+    } else {
+      key = `Row ${rowPart}`;                 // alpha row: N → Row N, AA → Row AA
+    }
     (groups[key] = groups[key] || []).push(id);
   });
   Object.entries(groups).forEach(([grp, ids]) => {
@@ -630,10 +641,13 @@ function submitForm() {
 
   // Send one row per selected light
   const promises = state.lights.map(lightId => {
+    const SHED_PFX = {'Shed 1':'S1','Shed 3':'S3','Shed 4':'S4','Shed 6':'S6','Unicef':'UC'};
+    const pfx = SHED_PFX[state.shed] || state.shed.substring(0,2).toUpperCase();
     const payload = {
       Timestamp: ts,
       Type:      isAction ? 'Action Taken' : 'Issue Report',
       Zone:      state.shed,
+      Unique_ID: pfx + '-' + lightId,
       Light_ID:  lightId,
       Issue:     isAction ? '' : state.issue,
       Action:    isAction ? state.action : '',
